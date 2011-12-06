@@ -1,0 +1,70 @@
+# HG changeset patch
+# User Cole Robinson <crobinso@redhat.com>
+# Date 1273761466 14400
+# Node ID 705e6a8bf27788404e3a2f48523d21bed9898326
+# Parent  104f0ec02b43b17b88de86dbf5ef8a9e7bfee2bc
+create: Ask to start default pool if it is inactive
+
+diff -r 104f0ec02b43 -r 705e6a8bf277 src/virtManager/addhardware.py
+--- a/src/virtManager/addhardware.py	Thu May 13 10:37:31 2010 -0400
++++ b/src/virtManager/addhardware.py	Thu May 13 10:37:46 2010 -0400
+@@ -1090,6 +1090,12 @@
+     def validate_page_storage(self):
+         bus, device = self.get_config_disk_target()
+ 
++        # Make sure default pool is running
++        if self.is_default_storage():
++            ret = uihelpers.check_default_pool_active(self.topwin, self.conn)
++            if not ret:
++                return False
++
+         readonly = False
+         if device == virtinst.VirtualDisk.DEVICE_CDROM:
+             readonly=True
+diff -r 104f0ec02b43 -r 705e6a8bf277 src/virtManager/create.py
+--- a/src/virtManager/create.py	Thu May 13 10:37:31 2010 -0400
++++ b/src/virtManager/create.py	Thu May 13 10:37:46 2010 -0400
+@@ -1320,6 +1320,12 @@
+         if not use_storage:
+             return True
+ 
++        # Make sure default pool is running
++        if self.is_default_storage():
++            ret = uihelpers.check_default_pool_active(self.topwin, self.conn)
++            if not ret:
++                return False
++
+         try:
+             # This can error out
+             diskpath, disksize, sparse = self.get_storage_info()
+diff -r 104f0ec02b43 -r 705e6a8bf277 src/virtManager/uihelpers.py
+--- a/src/virtManager/uihelpers.py	Thu May 13 10:37:31 2010 -0400
++++ b/src/virtManager/uihelpers.py	Thu May 13 10:37:46 2010 -0400
+@@ -104,6 +104,27 @@
+ 
+     return 1
+ 
++def check_default_pool_active(topwin, conn):
++    default_pool = util.get_default_pool(conn)
++    if default_pool and not default_pool.is_active():
++        res = err_dial.yes_no(_("Default pool is not active."),
++                              _("Storage pool '%s' is not active. "
++                                "Would you like to start the pool "
++                                "now?") % default_pool.get_name())
++        if not res:
++            return False
++
++        # Try to start the pool
++        try:
++            default_pool.start()
++            logging.info("Started pool '%s'." % default_pool.get_name())
++        except Exception, e:
++            return topwin.err.show_err(_("Could not start storage_pool "
++                                         "'%s': %s") %
++                                         (default_pool.get_name(), str(e)),
++                                         "".join(traceback.format_exc()))
++    return True
++
+ #####################################################
+ # Hardware model list building (for details, addhw) #
+ #####################################################

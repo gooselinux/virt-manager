@@ -1,0 +1,53 @@
+# HG changeset patch
+# User Cole Robinson <crobinso@redhat.com>
+# Date 1276536073 14400
+# Node ID 5a81cad341a5c3686506c67c4b669628b3e9b491
+# Parent  a7ded5a9c2647532e4ffc9c96b8c90cbf2a492a3
+createpool: Fix setting default values if enumerating sources
+
+diff -r a7ded5a9c264 -r 5a81cad341a5 src/virtManager/createpool.py
+--- a/src/virtManager/createpool.py	Mon Jun 14 13:16:37 2010 -0400
++++ b/src/virtManager/createpool.py	Mon Jun 14 13:21:13 2010 -0400
+@@ -443,7 +443,6 @@
+             self.window.get_widget("pool-forward").show()
+             self.window.get_widget("pool-forward").grab_focus()
+         elif page_number == PAGE_FORMAT:
+-            self.show_options_by_pool()
+             self.window.get_widget("pool-target-path").child.set_text(self._pool.target_path)
+             self.window.get_widget("pool-back").set_sensitive(True)
+             buildret = self.get_build_default()
+@@ -452,6 +451,7 @@
+             self.window.get_widget("pool-finish").show()
+             self.window.get_widget("pool-finish").grab_focus()
+             self.window.get_widget("pool-forward").hide()
++            self.show_options_by_pool()
+ 
+     def get_pool_to_validate(self):
+         """
+# HG changeset patch
+# User Cole Robinson <crobinso@redhat.com>
+# Date 1276537033 14400
+# Node ID d23b35a17efc8e1922c0df272c0638609a54ac10
+# Parent  5a81cad341a5c3686506c67c4b669628b3e9b491
+createpool: Fix destructive pool building
+
+Any time we would prompt when building a pool, we weren't properly setting
+up the Pool object, so build/install would always fail.
+
+diff -r 5a81cad341a5 -r d23b35a17efc src/virtManager/createpool.py
+--- a/src/virtManager/createpool.py	Mon Jun 14 13:21:13 2010 -0400
++++ b/src/virtManager/createpool.py	Mon Jun 14 13:37:13 2010 -0400
+@@ -508,9 +508,12 @@
+             buildval = self.window.get_widget("pool-build").get_active()
+             buildsen = self.window.get_widget("pool-build").get_property("sensitive")
+             if buildsen and buildval:
+-                return self.err.yes_no(_("Building a pool of this type will "
++                ret =  self.err.yes_no(_("Building a pool of this type will "
+                                          "format the source device. Are you "
+                                          "sure you want to 'build' this pool?"))
++                if not ret:
++                    return ret
++
+             self._pool = tmppool
+             return True
+ 

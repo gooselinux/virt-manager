@@ -1,0 +1,264 @@
+diff -rup virt-manager-0.8.4/configure new/configure
+--- virt-manager-0.8.4/configure	2010-03-24 11:55:08.000000000 -0400
++++ new/configure	2010-05-13 15:01:26.762484000 -0400
+@@ -604,7 +604,6 @@ ac_subst_vars='am__EXEEXT_FALSE
+ am__EXEEXT_TRUE
+ LTLIBOBJS
+ LIBOBJS
+-SCROLLKEEPER_CONFIG
+ VIRTINST_VERSION
+ POSUB
+ LTLIBINTL
+@@ -6419,54 +6418,17 @@ _ACEOF
+ VIRTINST_VERSION="0.500.3"
+ 
+ 
+-# Extract the first word of "scrollkeeper-config", so it can be a program name with args.
+-set dummy scrollkeeper-config; ac_word=$2
+-{ $as_echo "$as_me:$LINENO: checking for $ac_word" >&5
+-$as_echo_n "checking for $ac_word... " >&6; }
+-if test "${ac_cv_path_SCROLLKEEPER_CONFIG+set}" = set; then
+-  $as_echo_n "(cached) " >&6
+-else
+-  case $SCROLLKEEPER_CONFIG in
+-  [\\/]* | ?:[\\/]*)
+-  ac_cv_path_SCROLLKEEPER_CONFIG="$SCROLLKEEPER_CONFIG" # Let the user override the test with a path.
+-  ;;
+-  *)
+-  as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
+-for as_dir in $PATH
+-do
+-  IFS=$as_save_IFS
+-  test -z "$as_dir" && as_dir=.
+-  for ac_exec_ext in '' $ac_executable_extensions; do
+-  if { test -f "$as_dir/$ac_word$ac_exec_ext" && $as_test_x "$as_dir/$ac_word$ac_exec_ext"; }; then
+-    ac_cv_path_SCROLLKEEPER_CONFIG="$as_dir/$ac_word$ac_exec_ext"
+-    $as_echo "$as_me:$LINENO: found $as_dir/$ac_word$ac_exec_ext" >&5
+-    break 2
+-  fi
+-done
+-done
+-IFS=$as_save_IFS
+-
+-  test -z "$ac_cv_path_SCROLLKEEPER_CONFIG" && ac_cv_path_SCROLLKEEPER_CONFIG="no"
+-  ;;
+-esac
+-fi
+-SCROLLKEEPER_CONFIG=$ac_cv_path_SCROLLKEEPER_CONFIG
+-if test -n "$SCROLLKEEPER_CONFIG"; then
+-  { $as_echo "$as_me:$LINENO: result: $SCROLLKEEPER_CONFIG" >&5
+-$as_echo "$SCROLLKEEPER_CONFIG" >&6; }
+-else
+-  { $as_echo "$as_me:$LINENO: result: no" >&5
+-$as_echo "no" >&6; }
+-fi
++# Help is so outdated, don't even distribute it
++#help/Makefile
++#help/virt-manager/Makefile
++#help/virt-manager/C/Makefile
++#AC_PATH_PROG(SCROLLKEEPER_CONFIG, scrollkeeper-config,no)
++#if test x$SCROLLKEEPER_CONFIG = xno; then
++#  AC_MSG_ERROR(Couldn't find scrollkeeper-config. Please install the scrollkeeper package: http://scrollkeeper.sourceforge.net)
++#fi
+ 
+ 
+-if test x$SCROLLKEEPER_CONFIG = xno; then
+-  { { $as_echo "$as_me:$LINENO: error: Couldn't find scrollkeeper-config. Please install the scrollkeeper package: http://scrollkeeper.sourceforge.net" >&5
+-$as_echo "$as_me: error: Couldn't find scrollkeeper-config. Please install the scrollkeeper package: http://scrollkeeper.sourceforge.net" >&2;}
+-   { (exit 1); exit 1; }; }
+-fi
+-
+-ac_config_files="$ac_config_files Makefile pixmaps/Makefile pixmaps/hicolor/Makefile pixmaps/hicolor/16x16/Makefile pixmaps/hicolor/16x16/actions/Makefile pixmaps/hicolor/22x22/Makefile pixmaps/hicolor/22x22/actions/Makefile pixmaps/hicolor/24x24/Makefile pixmaps/hicolor/24x24/actions/Makefile pixmaps/hicolor/32x32/Makefile pixmaps/hicolor/32x32/actions/Makefile po/Makefile.in src/Makefile src/virtManager/Makefile man/Makefile tests/Makefile virt-manager.spec help/Makefile help/virt-manager/Makefile help/virt-manager/C/Makefile"
++ac_config_files="$ac_config_files Makefile pixmaps/Makefile pixmaps/hicolor/Makefile pixmaps/hicolor/16x16/Makefile pixmaps/hicolor/16x16/actions/Makefile pixmaps/hicolor/22x22/Makefile pixmaps/hicolor/22x22/actions/Makefile pixmaps/hicolor/24x24/Makefile pixmaps/hicolor/24x24/actions/Makefile pixmaps/hicolor/32x32/Makefile pixmaps/hicolor/32x32/actions/Makefile po/Makefile.in src/Makefile src/virtManager/Makefile man/Makefile tests/Makefile virt-manager.spec"
+ 
+ cat >confcache <<\_ACEOF
+ # This file is a shell script that caches the results of configure
+@@ -7140,9 +7102,6 @@ do
+     "man/Makefile") CONFIG_FILES="$CONFIG_FILES man/Makefile" ;;
+     "tests/Makefile") CONFIG_FILES="$CONFIG_FILES tests/Makefile" ;;
+     "virt-manager.spec") CONFIG_FILES="$CONFIG_FILES virt-manager.spec" ;;
+-    "help/Makefile") CONFIG_FILES="$CONFIG_FILES help/Makefile" ;;
+-    "help/virt-manager/Makefile") CONFIG_FILES="$CONFIG_FILES help/virt-manager/Makefile" ;;
+-    "help/virt-manager/C/Makefile") CONFIG_FILES="$CONFIG_FILES help/virt-manager/C/Makefile" ;;
+     "po/stamp-it") CONFIG_COMMANDS="$CONFIG_COMMANDS po/stamp-it" ;;
+ 
+   *) { { $as_echo "$as_me:$LINENO: error: invalid argument: $ac_config_target" >&5
+@@ -7933,3 +7892,4 @@ if test -n "$ac_unrecognized_opts" && te
+ $as_echo "$as_me: WARNING: unrecognized options: $ac_unrecognized_opts" >&2;}
+ fi
+ 
++
+diff -rup virt-manager-0.8.4/Makefile.in new/Makefile.in
+--- virt-manager-0.8.4/Makefile.in	2010-03-24 11:55:08.000000000 -0400
++++ new/Makefile.in	2010-05-13 15:01:28.662342000 -0400
+@@ -156,7 +156,6 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
+ PACKAGE_VERSION = @PACKAGE_VERSION@
+ PATH_SEPARATOR = @PATH_SEPARATOR@
+ POSUB = @POSUB@
+-SCROLLKEEPER_CONFIG = @SCROLLKEEPER_CONFIG@
+ SET_MAKE = @SET_MAKE@
+ SHELL = @SHELL@
+ STRIP = @STRIP@
+@@ -217,7 +216,7 @@ top_build_prefix = @top_build_prefix@
+ top_builddir = @top_builddir@
+ top_srcdir = @top_srcdir@
+ ACLOCAL_AMFLAGS = -I m4/
+-SUBDIRS = src pixmaps man po help tests
++SUBDIRS = src pixmaps man po tests
+ EXTRA_DIST = @PACKAGE@.spec HACKING COPYING-DOCS xmldocs.make omf.make \
+ 	intltool-extract.in intltool-merge.in intltool-update.in
+ 
+diff -rup virt-manager-0.8.4/man/Makefile.in new/man/Makefile.in
+--- virt-manager-0.8.4/man/Makefile.in	2010-03-24 11:55:06.000000000 -0400
++++ new/man/Makefile.in	2010-05-13 15:01:27.658410000 -0400
+@@ -125,7 +125,6 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
+ PACKAGE_VERSION = @PACKAGE_VERSION@
+ PATH_SEPARATOR = @PATH_SEPARATOR@
+ POSUB = @POSUB@
+-SCROLLKEEPER_CONFIG = @SCROLLKEEPER_CONFIG@
+ SET_MAKE = @SET_MAKE@
+ SHELL = @SHELL@
+ STRIP = @STRIP@
+diff -rup virt-manager-0.8.4/pixmaps/hicolor/16x16/actions/Makefile.in new/pixmaps/hicolor/16x16/actions/Makefile.in
+--- virt-manager-0.8.4/pixmaps/hicolor/16x16/actions/Makefile.in	2010-05-13 15:00:51.690967000 -0400
++++ new/pixmaps/hicolor/16x16/actions/Makefile.in	2010-05-13 15:01:27.885341000 -0400
+@@ -124,7 +124,6 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
+ PACKAGE_VERSION = @PACKAGE_VERSION@
+ PATH_SEPARATOR = @PATH_SEPARATOR@
+ POSUB = @POSUB@
+-SCROLLKEEPER_CONFIG = @SCROLLKEEPER_CONFIG@
+ SET_MAKE = @SET_MAKE@
+ SHELL = @SHELL@
+ STRIP = @STRIP@
+diff -rup virt-manager-0.8.4/pixmaps/hicolor/16x16/Makefile.in new/pixmaps/hicolor/16x16/Makefile.in
+--- virt-manager-0.8.4/pixmaps/hicolor/16x16/Makefile.in	2010-03-24 11:55:07.000000000 -0400
++++ new/pixmaps/hicolor/16x16/Makefile.in	2010-05-13 15:01:27.816399000 -0400
+@@ -140,7 +140,6 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
+ PACKAGE_VERSION = @PACKAGE_VERSION@
+ PATH_SEPARATOR = @PATH_SEPARATOR@
+ POSUB = @POSUB@
+-SCROLLKEEPER_CONFIG = @SCROLLKEEPER_CONFIG@
+ SET_MAKE = @SET_MAKE@
+ SHELL = @SHELL@
+ STRIP = @STRIP@
+diff -rup virt-manager-0.8.4/pixmaps/hicolor/22x22/actions/Makefile.in new/pixmaps/hicolor/22x22/actions/Makefile.in
+--- virt-manager-0.8.4/pixmaps/hicolor/22x22/actions/Makefile.in	2010-05-13 15:00:51.693970000 -0400
++++ new/pixmaps/hicolor/22x22/actions/Makefile.in	2010-05-13 15:01:28.021343000 -0400
+@@ -124,7 +124,6 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
+ PACKAGE_VERSION = @PACKAGE_VERSION@
+ PATH_SEPARATOR = @PATH_SEPARATOR@
+ POSUB = @POSUB@
+-SCROLLKEEPER_CONFIG = @SCROLLKEEPER_CONFIG@
+ SET_MAKE = @SET_MAKE@
+ SHELL = @SHELL@
+ STRIP = @STRIP@
+diff -rup virt-manager-0.8.4/pixmaps/hicolor/22x22/Makefile.in new/pixmaps/hicolor/22x22/Makefile.in
+--- virt-manager-0.8.4/pixmaps/hicolor/22x22/Makefile.in	2010-03-24 11:55:07.000000000 -0400
++++ new/pixmaps/hicolor/22x22/Makefile.in	2010-05-13 15:01:27.952342000 -0400
+@@ -140,7 +140,6 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
+ PACKAGE_VERSION = @PACKAGE_VERSION@
+ PATH_SEPARATOR = @PATH_SEPARATOR@
+ POSUB = @POSUB@
+-SCROLLKEEPER_CONFIG = @SCROLLKEEPER_CONFIG@
+ SET_MAKE = @SET_MAKE@
+ SHELL = @SHELL@
+ STRIP = @STRIP@
+diff -rup virt-manager-0.8.4/pixmaps/hicolor/24x24/actions/Makefile.in new/pixmaps/hicolor/24x24/actions/Makefile.in
+--- virt-manager-0.8.4/pixmaps/hicolor/24x24/actions/Makefile.in	2010-05-13 15:00:51.697967000 -0400
++++ new/pixmaps/hicolor/24x24/actions/Makefile.in	2010-05-13 15:01:28.156339000 -0400
+@@ -124,7 +124,6 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
+ PACKAGE_VERSION = @PACKAGE_VERSION@
+ PATH_SEPARATOR = @PATH_SEPARATOR@
+ POSUB = @POSUB@
+-SCROLLKEEPER_CONFIG = @SCROLLKEEPER_CONFIG@
+ SET_MAKE = @SET_MAKE@
+ SHELL = @SHELL@
+ STRIP = @STRIP@
+diff -rup virt-manager-0.8.4/pixmaps/hicolor/24x24/Makefile.in new/pixmaps/hicolor/24x24/Makefile.in
+--- virt-manager-0.8.4/pixmaps/hicolor/24x24/Makefile.in	2010-03-24 11:55:07.000000000 -0400
++++ new/pixmaps/hicolor/24x24/Makefile.in	2010-05-13 15:01:28.087341000 -0400
+@@ -140,7 +140,6 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
+ PACKAGE_VERSION = @PACKAGE_VERSION@
+ PATH_SEPARATOR = @PATH_SEPARATOR@
+ POSUB = @POSUB@
+-SCROLLKEEPER_CONFIG = @SCROLLKEEPER_CONFIG@
+ SET_MAKE = @SET_MAKE@
+ SHELL = @SHELL@
+ STRIP = @STRIP@
+diff -rup virt-manager-0.8.4/pixmaps/hicolor/32x32/actions/Makefile.in new/pixmaps/hicolor/32x32/actions/Makefile.in
+--- virt-manager-0.8.4/pixmaps/hicolor/32x32/actions/Makefile.in	2010-05-13 15:00:51.701967000 -0400
++++ new/pixmaps/hicolor/32x32/actions/Makefile.in	2010-05-13 15:01:28.294341000 -0400
+@@ -124,7 +124,6 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
+ PACKAGE_VERSION = @PACKAGE_VERSION@
+ PATH_SEPARATOR = @PATH_SEPARATOR@
+ POSUB = @POSUB@
+-SCROLLKEEPER_CONFIG = @SCROLLKEEPER_CONFIG@
+ SET_MAKE = @SET_MAKE@
+ SHELL = @SHELL@
+ STRIP = @STRIP@
+diff -rup virt-manager-0.8.4/pixmaps/hicolor/32x32/Makefile.in new/pixmaps/hicolor/32x32/Makefile.in
+--- virt-manager-0.8.4/pixmaps/hicolor/32x32/Makefile.in	2010-03-24 11:55:07.000000000 -0400
++++ new/pixmaps/hicolor/32x32/Makefile.in	2010-05-13 15:01:28.225340000 -0400
+@@ -140,7 +140,6 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
+ PACKAGE_VERSION = @PACKAGE_VERSION@
+ PATH_SEPARATOR = @PATH_SEPARATOR@
+ POSUB = @POSUB@
+-SCROLLKEEPER_CONFIG = @SCROLLKEEPER_CONFIG@
+ SET_MAKE = @SET_MAKE@
+ SHELL = @SHELL@
+ STRIP = @STRIP@
+diff -rup virt-manager-0.8.4/pixmaps/hicolor/Makefile.in new/pixmaps/hicolor/Makefile.in
+--- virt-manager-0.8.4/pixmaps/hicolor/Makefile.in	2010-03-24 11:55:07.000000000 -0400
++++ new/pixmaps/hicolor/Makefile.in	2010-05-13 15:01:28.357341000 -0400
+@@ -140,7 +140,6 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
+ PACKAGE_VERSION = @PACKAGE_VERSION@
+ PATH_SEPARATOR = @PATH_SEPARATOR@
+ POSUB = @POSUB@
+-SCROLLKEEPER_CONFIG = @SCROLLKEEPER_CONFIG@
+ SET_MAKE = @SET_MAKE@
+ SHELL = @SHELL@
+ STRIP = @STRIP@
+diff -rup virt-manager-0.8.4/pixmaps/Makefile.in new/pixmaps/Makefile.in
+--- virt-manager-0.8.4/pixmaps/Makefile.in	2010-03-24 11:55:06.000000000 -0400
++++ new/pixmaps/Makefile.in	2010-05-13 15:01:27.739410000 -0400
+@@ -164,7 +164,6 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
+ PACKAGE_VERSION = @PACKAGE_VERSION@
+ PATH_SEPARATOR = @PATH_SEPARATOR@
+ POSUB = @POSUB@
+-SCROLLKEEPER_CONFIG = @SCROLLKEEPER_CONFIG@
+ SET_MAKE = @SET_MAKE@
+ SHELL = @SHELL@
+ STRIP = @STRIP@
+diff -rup virt-manager-0.8.4/src/Makefile.in new/src/Makefile.in
+--- virt-manager-0.8.4/src/Makefile.in	2010-03-24 11:55:07.000000000 -0400
++++ new/src/Makefile.in	2010-05-13 15:01:28.452349000 -0400
+@@ -170,7 +170,6 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
+ PACKAGE_VERSION = @PACKAGE_VERSION@
+ PATH_SEPARATOR = @PATH_SEPARATOR@
+ POSUB = @POSUB@
+-SCROLLKEEPER_CONFIG = @SCROLLKEEPER_CONFIG@
+ SET_MAKE = @SET_MAKE@
+ SHELL = @SHELL@
+ STRIP = @STRIP@
+diff -rup virt-manager-0.8.4/src/virtManager/Makefile.in new/src/virtManager/Makefile.in
+--- virt-manager-0.8.4/src/virtManager/Makefile.in	2010-03-24 11:55:08.000000000 -0400
++++ new/src/virtManager/Makefile.in	2010-05-13 15:01:28.526341000 -0400
+@@ -124,7 +124,6 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
+ PACKAGE_VERSION = @PACKAGE_VERSION@
+ PATH_SEPARATOR = @PATH_SEPARATOR@
+ POSUB = @POSUB@
+-SCROLLKEEPER_CONFIG = @SCROLLKEEPER_CONFIG@
+ SET_MAKE = @SET_MAKE@
+ SHELL = @SHELL@
+ STRIP = @STRIP@
+diff -rup virt-manager-0.8.4/tests/Makefile.in new/tests/Makefile.in
+--- virt-manager-0.8.4/tests/Makefile.in	2010-03-24 11:55:08.000000000 -0400
++++ new/tests/Makefile.in	2010-05-13 15:01:28.585344000 -0400
+@@ -100,7 +100,6 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
+ PACKAGE_VERSION = @PACKAGE_VERSION@
+ PATH_SEPARATOR = @PATH_SEPARATOR@
+ POSUB = @POSUB@
+-SCROLLKEEPER_CONFIG = @SCROLLKEEPER_CONFIG@
+ SET_MAKE = @SET_MAKE@
+ SHELL = @SHELL@
+ STRIP = @STRIP@

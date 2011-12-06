@@ -1,0 +1,82 @@
+# HG changeset patch
+# User Cole Robinson <crobinso@redhat.com>
+# Date 1273764061 14400
+# Node ID d8c0607c68dcbf22bf05ab8dfe96f2cfbb9ae6ca
+# Parent  705e6a8bf27788404e3a2f48523d21bed9898326
+create: Skip post-install restart if user destroys VM
+
+diff -r 705e6a8bf277 -r d8c0607c68dc src/virtManager/create.py
+--- a/src/virtManager/create.py	Thu May 13 10:37:46 2010 -0400
++++ b/src/virtManager/create.py	Thu May 13 11:21:01 2010 -0400
+@@ -1611,10 +1611,16 @@
+                     # out handler, removing the virtinst_guest which
+                     # will force one final restart.
+                     virtinst_guest.continue_install()
++
+                     util.connect_opt_out(vm, "status-changed",
+                                          self.check_install_status, None)
+                     return True
+ 
++            if vm.get_install_abort():
++                logging.debug("User manually shutdown VM, not restarting "
++                              "guest after install.")
++                return True
++
+             logging.debug("Install should be completed, starting VM.")
+             vm.startup()
+         except Exception, e:
+diff -r 705e6a8bf277 -r d8c0607c68dc src/virtManager/domain.py
+--- a/src/virtManager/domain.py	Thu May 13 10:37:46 2010 -0400
++++ b/src/virtManager/domain.py	Thu May 13 11:21:01 2010 -0400
+@@ -76,6 +76,7 @@
+         self.uuid = uuid
+         self.cloning = False
+ 
++        self._install_abort = False
+         self._startup_vcpus = None
+ 
+         self.managedsave_supported = False
+@@ -128,6 +129,13 @@
+     def set_cloning(self, val):
+         self.cloning = bool(val)
+ 
++    # If manual shutdown or destroy specified, make sure we don't continue
++    # install process
++    def set_install_abort(self, val):
++        self._install_abort = bool(val)
++    def get_install_abort(self):
++        return bool(self._install_abort)
++
+     # Device/XML altering API
+     def set_autostart(self, val):
+         raise NotImplementedError()
+@@ -1292,11 +1300,13 @@
+                                                     reboot_listener, self)
+ 
+     def shutdown(self):
++        self.set_install_abort(True)
+         self._unregister_reboot_listener()
+         self._backend.shutdown()
+         self._update_status()
+ 
+     def reboot(self):
++        self.set_install_abort(True)
+         self._backend.reboot(0)
+         self._update_status()
+ 
+@@ -1328,6 +1338,7 @@
+         return self._backend.hasManagedSaveImage(0)
+ 
+     def save(self, filename=None):
++        self.set_install_abort(True)
+         if not self.managedsave_supported:
+             self._backend.save(filename)
+         else:
+@@ -1335,6 +1346,7 @@
+         self._update_status()
+ 
+     def destroy(self):
++        self.set_install_abort(True)
+         self._unregister_reboot_listener()
+         self._backend.destroy()
+         self._update_status()

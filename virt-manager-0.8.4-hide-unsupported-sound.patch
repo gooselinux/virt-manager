@@ -1,0 +1,43 @@
+# HG changeset patch
+# User Cole Robinson <crobinso@redhat.com>
+# Date 1273768887 14400
+# Node ID 622696bd02410f036e165553a9b21b1f647c3f83
+# Parent  b5582807a1b6e444d6e2570d061c4f9ab2a6a326
+Add infrastructure for limiting supported sound models
+
+diff -r b5582807a1b6 -r 622696bd0241 src/virtManager/uihelpers.py
+--- a/src/virtManager/uihelpers.py	Thu May 13 12:55:08 2010 -0400
++++ b/src/virtManager/uihelpers.py	Thu May 13 12:41:27 2010 -0400
+@@ -39,6 +39,8 @@
+ OPTICAL_MEDIA_KEY = 4
+ OPTICAL_IS_VALID = 5
+ 
++SUPPORTED_SOUND_MODELS = None
++
+ # What user we guess the qemu:///system starts the emulator as. Some distros
+ # may use a nonroot user, so simply changing this will cause several UI
+ # pieces to attempt to verify that permissions are correct. Eventually this
+@@ -155,6 +157,11 @@
+     for m in virtinst.VirtualAudio.MODELS:
+         if m == virtinst.VirtualAudio.MODEL_DEFAULT and no_default:
+             continue
++
++        if (SUPPORTED_SOUND_MODELS is not None and
++            m not in SUPPORTED_SOUND_MODELS):
++            continue
++
+         dev_model.append([m])
+     if len(dev_model) > 0:
+         combo.set_active(0)
+diff -rup virt-manager-0.8.4/src/virtManager/uihelpers.py new/src/virtManager/uihelpers.py
+--- virt-manager-0.8.4/src/virtManager/uihelpers.py	2010-05-13 15:07:40.984928000 -0400
++++ new/src/virtManager/uihelpers.py	2010-05-13 15:20:22.766342000 -0400
+@@ -38,7 +38,7 @@ OPTICAL_DEV_KEY = 3
+ OPTICAL_MEDIA_KEY = 4
+ OPTICAL_IS_VALID = 5
+ 
+-SUPPORTED_SOUND_MODELS = None
++SUPPORTED_SOUND_MODELS = ["ac97", "es1370"]
+ 
+ # What user we guess the qemu:///system starts the emulator as. Some distros
+ # may use a nonroot user, so simply changing this will cause several UI

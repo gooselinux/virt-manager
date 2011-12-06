@@ -1,0 +1,749 @@
+# HG changeset patch
+# User Cole Robinson <crobinso@redhat.com>
+# Date 1273618885 14400
+# Node ID 3bf35eddc1a378670b8fa8e7e76c92137ea99d0b
+# Parent  1f78c4ea06926aaf791b97d0f313337a8c0c72b5
+engine: Use poweroff confirm setting before saving a VM
+
+diff -r 1f78c4ea0692 -r 3bf35eddc1a3 src/virtManager/engine.py
+--- a/src/virtManager/engine.py	Wed May 12 03:20:23 2010 +0000
++++ b/src/virtManager/engine.py	Tue May 11 19:01:25 2010 -0400
+@@ -708,13 +708,26 @@
+ 
+     def save_domain(self, src, uri, uuid):
+         conn = self._lookup_connection(uri)
++        vm = conn.get_vm(uuid)
++        do_prompt = self.config.get_confirm_poweroff()
++
+         if conn.is_remote():
+             # FIXME: This should work with remote storage stuff
+             self.err.val_err(_("Saving virtual machines over remote "
+                                "connections is not yet supported."))
+             return
+ 
+-        vm = conn.get_vm(uuid)
++        if do_prompt:
++            res = self.err.warn_chkbox(
++                    text1=_("Are you sure you want to save "
++                            "'%s'?" % vm.get_name()),
++                    chktext=_("Don't ask me again."),
++                    buttons=gtk.BUTTONS_YES_NO)
++
++            response, skip_prompt = res
++            if not response:
++                return
++            self.config.set_confirm_poweroff(not skip_prompt)
+ 
+         path = util.browse_local(src.window.get_widget("vmm-details"),
+                                  _("Save Virtual Machine"),
+diff -r 1f78c4ea0692 -r 3bf35eddc1a3 src/vmm-preferences.glade
+--- a/src/vmm-preferences.glade	Wed May 12 03:20:23 2010 +0000
++++ b/src/vmm-preferences.glade	Tue May 11 19:01:25 2010 -0400
+@@ -579,7 +579,7 @@
+                               <widget class="GtkLabel" id="label20">
+                                 <property name="visible">True</property>
+                                 <property name="xalign">0</property>
+-                                <property name="label" translatable="yes">Poweroff/_Reboot:</property>
++                                <property name="label" translatable="yes">Poweroff/_Reboot/Save:</property>
+                                 <property name="use_underline">True</property>
+                                 <property name="mnemonic_widget">prefs-confirm-poweroff</property>
+                               </widget>
+# HG changeset patch
+# User Cole Robinson <crobinso@redhat.com>
+# Date 1273678979 14400
+# Node ID d2c1b327de0c4bf94b719feaba5f1ae1c3ca9263
+# Parent  3bf35eddc1a378670b8fa8e7e76c92137ea99d0b
+Improve save/restore UI
+
+Make the save command a member of the 'Shutdown' menu, and place 'restore'
+out of the way in Host details -> File. Emphasis on the old 'restore' will
+be diminished once we support managed save.
+
+diff -r 3bf35eddc1a3 -r d2c1b327de0c src/virtManager/details.py
+--- a/src/virtManager/details.py	Tue May 11 19:01:25 2010 -0400
++++ b/src/virtManager/details.py	Wed May 12 11:42:59 2010 -0400
+@@ -226,7 +226,7 @@
+             "on_details_menu_run_activate": self.control_vm_run,
+             "on_details_menu_poweroff_activate": self.control_vm_shutdown,
+             "on_details_menu_reboot_activate": self.control_vm_reboot,
+-            "on_details_menu_save_activate": self.control_vm_save_domain,
++            "on_details_menu_save_activate": self.control_vm_save,
+             "on_details_menu_destroy_activate": self.control_vm_destroy,
+             "on_details_menu_pause_activate": self.control_vm_pause,
+             "on_details_menu_clone_activate": self.control_vm_clone,
+@@ -374,7 +374,8 @@
+                                    self.window.get_widget("control-shutdown"),
+                                    self.control_vm_shutdown,
+                                    self.control_vm_reboot,
+-                                   self.control_vm_destroy)
++                                   self.control_vm_destroy,
++                                   self.control_vm_save)
+ 
+         icon_name = self.config.get_shutdown_icon_name()
+         for name in ["details-menu-shutdown",
+@@ -917,7 +918,7 @@
+     def control_vm_console(self, src):
+         self.emit("action-show-console", self.vm.get_connection().get_uri(), self.vm.get_uuid())
+ 
+-    def control_vm_save_domain(self, src):
++    def control_vm_save(self, src):
+         self.emit("action-save-domain", self.vm.get_connection().get_uri(), self.vm.get_uuid())
+ 
+     def control_vm_destroy(self, src):
+diff -r 3bf35eddc1a3 -r d2c1b327de0c src/virtManager/engine.py
+--- a/src/virtManager/engine.py	Tue May 11 19:01:25 2010 -0400
++++ b/src/virtManager/engine.py	Wed May 12 11:42:59 2010 -0400
+@@ -471,6 +471,8 @@
+         self.refresh_console(uri, uuid)
+     def _do_save_domain(self, src, uri, uuid):
+         self.save_domain(src, uri, uuid)
++    def _do_restore_domain(self, src, uri):
++        self.restore_domain(src, uri)
+     def _do_destroy_domain(self, src, uri, uuid):
+         self.destroy_domain(src, uri, uuid)
+     def _do_suspend_domain(self, src, uri, uuid):
+@@ -520,6 +522,7 @@
+             manager.connect("action-show-help", self._do_show_help)
+             manager.connect("action-exit-app", self._do_exit_app)
+             manager.connect("action-view-manager", self._do_show_manager)
++            manager.connect("action-restore-domain", self._do_restore_domain)
+             self.connections[uri]["windowHost"] = manager
+         self.connections[uri]["windowHost"].show()
+ 
+@@ -601,6 +604,7 @@
+             self.windowManager.connect("action-shutdown-domain", self._do_shutdown_domain)
+             self.windowManager.connect("action-reboot-domain", self._do_reboot_domain)
+             self.windowManager.connect("action-destroy-domain", self._do_destroy_domain)
++            self.windowManager.connect("action-save-domain", self._do_save_domain)
+             self.windowManager.connect("action-migrate-domain", self._do_migrate_domain)
+             self.windowManager.connect("action-clone-domain", self._do_clone_domain)
+             self.windowManager.connect("action-show-console", self._do_show_console)
+@@ -752,6 +756,41 @@
+         except Exception, e:
+             asyncjob.set_error(str(e), "".join(traceback.format_exc()))
+ 
++    def restore_domain(self, src, uri):
++        conn = self._lookup_connection(uri)
++        if conn.is_remote():
++            self.err.val_err(_("Restoring virtual machines over remote "
++                               "connections is not yet supported"))
++            return
++
++        path = util.browse_local(src.window.get_widget("vmm-manager"),
++                                 _("Restore Virtual Machine"),
++                                 self.config, conn,
++                                 browse_reason=self.config.CONFIG_DIR_RESTORE)
++
++        if not path:
++            return
++
++        progWin = vmmAsyncJob(self.config, self.restore_saved_callback,
++                              [path, conn], _("Restoring Virtual Machine"))
++        progWin.run()
++        error, details = progWin.get_error()
++
++        if error is not None:
++            self.err.show_err(error, details,
++                              title=_("Error restoring domain"))
++
++    def restore_saved_callback(self, file_to_load, conn, asyncjob):
++        try:
++            newconn = util.dup_conn(self.config, conn,
++                                    return_conn_class=True)
++            newconn.restore(file_to_load)
++        except Exception, e:
++            err = (_("Error restoring domain '%s': %s") %
++                                  (file_to_load, str(e)))
++            details = "".join(traceback.format_exc())
++            asyncjob.set_error(err, details)
++
+     def destroy_domain(self, src, uri, uuid):
+         conn = self._lookup_connection(uri)
+         vm = conn.get_vm(uuid)
+diff -r 3bf35eddc1a3 -r d2c1b327de0c src/virtManager/host.py
+--- a/src/virtManager/host.py	Tue May 11 19:01:25 2010 -0400
++++ b/src/virtManager/host.py	Wed May 12 11:42:59 2010 -0400
+@@ -48,6 +48,8 @@
+                             gobject.TYPE_NONE, []),
+         "action-view-manager": (gobject.SIGNAL_RUN_FIRST,
+                                 gobject.TYPE_NONE, []),
++        "action-restore-domain": (gobject.SIGNAL_RUN_FIRST,
++                                  gobject.TYPE_NONE, (str,)),
+         }
+     def __init__(self, config, conn, engine):
+         self.__gobject_init__()
+@@ -114,6 +116,7 @@
+             "on_menu_file_close_activate": self.close,
+             "on_vmm_host_delete_event": self.close,
+ 
++            "on_menu_restore_saved_activate": self.restore_domain,
+             "on_menu_help_contents_activate": self.show_help,
+ 
+             "on_net_add_clicked": self.add_network,
+@@ -320,6 +323,9 @@
+     def view_manager(self, src):
+         self.emit("action-view-manager")
+ 
++    def restore_domain(self, src):
++        self.emit("action-restore-domain", self.conn.get_uri())
++
+     def exit_app(self, src):
+         self.emit("action-exit-app")
+ 
+@@ -347,6 +353,7 @@
+ 
+     def conn_state_changed(self, ignore1=None):
+         state = (self.conn.get_state() == vmmConnection.STATE_ACTIVE)
++        self.window.get_widget("menu_file_restore_saved").set_sensitive(state)
+         self.window.get_widget("net-add").set_sensitive(state)
+         self.window.get_widget("pool-add").set_sensitive(state)
+ 
+diff -r 3bf35eddc1a3 -r d2c1b327de0c src/virtManager/manager.py
+--- a/src/virtManager/manager.py	Tue May 11 19:01:25 2010 -0400
++++ b/src/virtManager/manager.py	Wed May 12 11:42:59 2010 -0400
+@@ -23,12 +23,10 @@
+ import gtk.glade
+ 
+ import logging
+-import traceback
+ 
+ import virtManager.config as cfg
+ import virtManager.uihelpers as uihelpers
+ from virtManager.connection import vmmConnection
+-from virtManager.asyncjob import vmmAsyncJob
+ from virtManager.error import vmmErrorDialog
+ from virtManager.delete import vmmDeleteDialog
+ from virtManager.graphwidgets import CellRendererSparkline
+@@ -105,6 +103,8 @@
+                                  gobject.TYPE_NONE, (str, str)),
+         "action-destroy-domain": (gobject.SIGNAL_RUN_FIRST,
+                                   gobject.TYPE_NONE, (str, str)),
++        "action-save-domain": (gobject.SIGNAL_RUN_FIRST,
++                               gobject.TYPE_NONE, (str, str)),
+         "action-connect": (gobject.SIGNAL_RUN_FIRST,
+                            gobject.TYPE_NONE, [str]),
+         "action-show-help": (gobject.SIGNAL_RUN_FIRST,
+@@ -165,7 +165,6 @@
+             "on_menu_file_add_connection_activate": self.new_connection,
+             "on_menu_file_quit_activate": self.exit_app,
+             "on_menu_file_close_activate": self.close,
+-            "on_menu_restore_saved_activate": self.restore_saved,
+             "on_vmm_close_clicked": self.close,
+             "on_vm_open_clicked": self.open_vm_console,
+             "on_vm_run_clicked": self.start_vm,
+@@ -275,7 +274,8 @@
+                                    self.window.get_widget("vm-shutdown"),
+                                    self.poweroff_vm,
+                                    self.reboot_vm,
+-                                   self.destroy_vm)
++                                   self.destroy_vm,
++                                   self.save_vm)
+ 
+         tool = self.window.get_widget("vm-toolbar")
+         util.safe_set_prop(tool, "icon-size", gtk.ICON_SIZE_LARGE_TOOLBAR)
+@@ -296,6 +296,7 @@
+         destroy_icon        = build_icon(icon_name)
+         run_icon            = build_stock(gtk.STOCK_MEDIA_PLAY)
+         pause_icon          = build_stock(gtk.STOCK_MEDIA_PAUSE)
++        save_icon           = build_stock(gtk.STOCK_SAVE)
+         resume_icon         = build_stock(gtk.STOCK_MEDIA_PAUSE)
+         delete_icon         = build_stock(gtk.STOCK_DELETE)
+ 
+@@ -345,6 +346,16 @@
+                                                            self.destroy_vm)
+         self.vmmenushutdown.add(self.vmmenushutdown_items["forcepoweroff"])
+ 
++        self.vmmenushutdown_items["sep"] = gtk.SeparatorMenuItem()
++        self.vmmenushutdown_items["sep"].show()
++        self.vmmenushutdown.add(self.vmmenushutdown_items["sep"])
++
++        self.vmmenushutdown_items["save"] = gtk.ImageMenuItem(_("Sa_ve"))
++        self.vmmenushutdown_items["save"].set_image(save_icon)
++        self.vmmenushutdown_items["save"].show()
++        self.vmmenushutdown_items["save"].connect("activate", self.save_vm)
++        self.vmmenushutdown.add(self.vmmenushutdown_items["save"])
++
+         self.vmmenu_items["hsep1"] = gtk.SeparatorMenuItem()
+         self.vmmenu_items["hsep1"].show()
+         self.vmmenu.add(self.vmmenu_items["hsep1"])
+@@ -608,41 +619,6 @@
+             self.emit("action-show-console",
+                       conn.get_uri(), self.vm.get_uuid())
+ 
+-    def restore_saved(self, src=None):
+-        conn = self.current_connection()
+-        if conn.is_remote():
+-            self.err.val_err(_("Restoring virtual machines over remote "
+-                               "connections is not yet supported"))
+-            return
+-
+-        path = util.browse_local(self.window.get_widget("vmm-manager"),
+-                                 _("Restore Virtual Machine"),
+-                                 self.config, conn,
+-                                 browse_reason=self.config.CONFIG_DIR_RESTORE)
+-
+-        if not path:
+-            return
+-
+-        progWin = vmmAsyncJob(self.config, self.restore_saved_callback,
+-                              [path], _("Restoring Virtual Machine"))
+-        progWin.run()
+-        error, details = progWin.get_error()
+-
+-        if error is not None:
+-            self.err.show_err(error, details,
+-                              title=_("Error restoring domain"))
+-
+-    def restore_saved_callback(self, file_to_load, asyncjob):
+-        try:
+-            newconn = util.dup_conn(self.config, self.current_connection(),
+-                                    return_conn_class=True)
+-            newconn.restore(file_to_load)
+-        except Exception, e:
+-            err = (_("Error restoring domain '%s': %s") %
+-                                  (file_to_load, str(e)))
+-            details = "".join(traceback.format_exc())
+-            asyncjob.set_error(err, details)
+-
+     def do_delete(self, ignore=None):
+         conn = self.current_connection()
+         vm = self.current_vm()
+@@ -719,6 +695,12 @@
+             self.emit("action-destroy-domain",
+                       vm.get_connection().get_uri(), vm.get_uuid())
+ 
++    def save_vm(self, ignore):
++        vm = self.current_vm()
++        if vm is not None:
++            self.emit("action-save-domain",
++                      vm.get_connection().get_uri(), vm.get_uuid())
++
+     def pause_vm(self, ignore):
+         vm = self.current_vm()
+         if vm is not None:
+@@ -1004,7 +986,6 @@
+         else:
+             show_pause = bool(vm and vm.is_pauseable())
+         show_shutdown = bool(vm and vm.is_stoppable())
+-        restore = bool(conn and conn.get_state() == vmmConnection.STATE_ACTIVE)
+ 
+         self.window.get_widget("vm-open").set_sensitive(show_open)
+         self.window.get_widget("vm-run").set_sensitive(show_run)
+@@ -1015,7 +996,6 @@
+         self.window.get_widget("menu_edit_details").set_sensitive(show_details)
+         self.window.get_widget("menu_host_details").set_sensitive(host_details)
+         self.window.get_widget("menu_edit_delete").set_sensitive(delete)
+-        self.window.get_widget("menu_file_restore_saved").set_sensitive(restore)
+ 
+     def popup_vm_menu_key(self, widget, event):
+         if gtk.gdk.keyval_name(event.keyval) != "Menu":
+@@ -1065,6 +1045,7 @@
+             self.vmmenushutdown_items["poweroff"].set_sensitive(stop)
+             self.vmmenushutdown_items["reboot"].set_sensitive(stop)
+             self.vmmenushutdown_items["forcepoweroff"].set_sensitive(destroy)
++            self.vmmenushutdown_items["save"].set_sensitive(destroy)
+             self.vmmenu.popup(None, None, None, 0, event.time)
+         else:
+             # Pop up connection menu
+diff -r 3bf35eddc1a3 -r d2c1b327de0c src/virtManager/uihelpers.py
+--- a/src/virtManager/uihelpers.py	Tue May 11 19:01:25 2010 -0400
++++ b/src/virtManager/uihelpers.py	Wed May 12 11:42:59 2010 -0400
+@@ -595,7 +595,7 @@
+ ####################################################################
+ 
+ def build_shutdown_button_menu(config, widget, shutdown_cb, reboot_cb,
+-                               destroy_cb):
++                               destroy_cb, save_cb):
+     icon_name = config.get_shutdown_icon_name()
+     widget.set_icon_name(icon_name)
+     menu = gtk.Menu()
+@@ -604,6 +604,7 @@
+     rebootimg = gtk.image_new_from_icon_name(icon_name, gtk.ICON_SIZE_MENU)
+     shutdownimg = gtk.image_new_from_icon_name(icon_name, gtk.ICON_SIZE_MENU)
+     destroyimg = gtk.image_new_from_icon_name(icon_name, gtk.ICON_SIZE_MENU)
++    saveimg = gtk.image_new_from_icon_name(gtk.STOCK_SAVE, gtk.ICON_SIZE_MENU)
+ 
+     reboot = gtk.ImageMenuItem(_("_Reboot"))
+     reboot.set_image(rebootimg)
+@@ -623,6 +624,16 @@
+     destroy.connect("activate", destroy_cb)
+     menu.add(destroy)
+ 
++    sep = gtk.SeparatorMenuItem()
++    sep.show()
++    menu.add(sep)
++
++    save = gtk.ImageMenuItem(_("Sa_ve"))
++    save.set_image(saveimg)
++    save.show()
++    save.connect("activate", save_cb)
++    menu.add(save)
++
+ #####################################
+ # Path permissions checker for qemu #
+ #####################################
+diff -r 3bf35eddc1a3 -r d2c1b327de0c src/vmm-details.glade
+--- a/src/vmm-details.glade	Tue May 11 19:01:25 2010 -0400
++++ b/src/vmm-details.glade	Wed May 12 11:42:59 2010 -0400
+@@ -142,6 +142,26 @@
+                                 </child>
+                               </widget>
+                             </child>
++                            <child>
++                              <widget class="GtkSeparatorMenuItem" id="menuitem3">
++                                <property name="visible">True</property>
++                              </widget>
++                            </child>
++                            <child>
++                              <widget class="GtkImageMenuItem" id="details-menu-save">
++                                <property name="label">_Save</property>
++                                <property name="visible">True</property>
++                                <property name="use_underline">True</property>
++                                <property name="use_stock">False</property>
++                                <signal name="activate" handler="on_details_menu_save_activate"/>
++                                <child internal-child="image">
++                                  <widget class="GtkImage" id="image123">
++                                    <property name="visible">True</property>
++                                    <property name="stock">gtk-save</property>
++                                  </widget>
++                                </child>
++                              </widget>
++                            </child>
+                           </widget>
+                         </child>
+                         <child internal-child="image">
+@@ -153,14 +173,6 @@
+                       </widget>
+                     </child>
+                     <child>
+-                      <widget class="GtkMenuItem" id="details-menu-save">
+-                        <property name="visible">True</property>
+-                        <property name="label" translatable="yes">_Save</property>
+-                        <property name="use_underline">True</property>
+-                        <signal name="activate" handler="on_details_menu_save_activate"/>
+-                      </widget>
+-                    </child>
+-                    <child>
+                       <widget class="GtkSeparatorMenuItem" id="separator11">
+                         <property name="visible">True</property>
+                       </widget>
+diff -r 3bf35eddc1a3 -r d2c1b327de0c src/vmm-host.glade
+--- a/src/vmm-host.glade	Tue May 11 19:01:25 2010 -0400
++++ b/src/vmm-host.glade	Wed May 12 11:42:59 2010 -0400
+@@ -23,6 +23,28 @@
+                 <child>
+                   <widget class="GtkMenu" id="menuitem4_menu">
+                     <child>
++                      <widget class="GtkImageMenuItem" id="menu_file_restore_saved">
++                        <property name="label" translatable="yes">Restore Saved Machine...</property>
++                        <property name="visible">True</property>
++                        <property name="tooltip" translatable="yes">Restore a saved machine from a filesystem image</property>
++                        <property name="use_underline">True</property>
++                        <property name="use_stock">False</property>
++                        <signal name="activate" handler="on_menu_restore_saved_activate"/>
++                        <accelerator key="r" signal="activate" modifiers="GDK_MOD1_MASK"/>
++                        <child internal-child="image">
++                          <widget class="GtkImage" id="image3">
++                            <property name="visible">True</property>
++                            <property name="stock">gtk-open</property>
++                          </widget>
++                        </child>
++                      </widget>
++                    </child>
++                    <child>
++                      <widget class="GtkSeparatorMenuItem" id="separator4">
++                        <property name="visible">True</property>
++                      </widget>
++                    </child>
++                    <child>
+                       <widget class="GtkMenuItem" id="menu-file-view-manager">
+                         <property name="visible">True</property>
+                         <property name="label" translatable="yes">_View Manager</property>
+@@ -2023,7 +2045,7 @@
+                             <property name="tooltip" translatable="yes">Stop Interface</property>
+                             <signal name="clicked" handler="on_interface_stop_clicked"/>
+                             <child>
+-                              <widget class="GtkImage" id="image3">
++                              <widget class="GtkImage" id="image5">
+                                 <property name="visible">True</property>
+                                 <property name="stock">gtk-cancel</property>
+                               </widget>
+@@ -2044,7 +2066,7 @@
+                             <property name="tooltip" translatable="yes">Delete Interface</property>
+                             <signal name="clicked" handler="on_interface_delete_clicked"/>
+                             <child>
+-                              <widget class="GtkImage" id="image5">
++                              <widget class="GtkImage" id="image9">
+                                 <property name="visible">True</property>
+                                 <property name="stock">gtk-delete</property>
+                               </widget>
+diff -r 3bf35eddc1a3 -r d2c1b327de0c src/vmm-manager.glade
+--- a/src/vmm-manager.glade	Tue May 11 19:01:25 2010 -0400
++++ b/src/vmm-manager.glade	Wed May 12 11:42:59 2010 -0400
+@@ -24,28 +24,6 @@
+                 <child>
+                   <widget class="GtkMenu" id="menuitem4_menu">
+                     <child>
+-                      <widget class="GtkImageMenuItem" id="menu_file_restore_saved">
+-                        <property name="label" translatable="yes">Restore Saved Machine...</property>
+-                        <property name="visible">True</property>
+-                        <property name="tooltip" translatable="yes">Restore a saved machine from a filesystem image</property>
+-                        <property name="use_underline">True</property>
+-                        <property name="use_stock">False</property>
+-                        <signal name="activate" handler="on_menu_restore_saved_activate"/>
+-                        <accelerator key="r" signal="activate" modifiers="GDK_MOD1_MASK"/>
+-                        <child internal-child="image">
+-                          <widget class="GtkImage" id="image3">
+-                            <property name="visible">True</property>
+-                            <property name="stock">gtk-open</property>
+-                          </widget>
+-                        </child>
+-                      </widget>
+-                    </child>
+-                    <child>
+-                      <widget class="GtkSeparatorMenuItem" id="separator4">
+-                        <property name="visible">True</property>
+-                      </widget>
+-                    </child>
+-                    <child>
+                       <widget class="GtkImageMenuItem" id="open_connection">
+                         <property name="label" translatable="yes">_Add Connection...</property>
+                         <property name="visible">True</property>
+# HG changeset patch
+# User Cole Robinson <crobinso@redhat.com>
+# Date 1273683452 14400
+# Node ID affa97c8ae9a5c6e50d54b27997fac5f013916ea
+# Parent  d2c1b327de0c4bf94b719feaba5f1ae1c3ca9263
+Support libvirt managed save/restore
+
+If a VM has a saved image, we s/Run/Restore/g for all the Run UI so the user
+is aware they will be restoring from a saved state.
+
+diff -r d2c1b327de0c -r affa97c8ae9a src/virtManager/connection.py
+--- a/src/virtManager/connection.py	Wed May 12 11:42:59 2010 -0400
++++ b/src/virtManager/connection.py	Wed May 12 12:57:32 2010 -0400
+@@ -127,6 +127,7 @@
+         self._nodedev_capable = None
+ 
+         self._xml_flags = {}
++        self._support_dict = {}
+ 
+         # Physical network interfaces: name -> virtinst.NodeDevice
+         self.nodedevs = {}
+@@ -532,6 +533,15 @@
+ 
+         return self._get_flags_helper(vm, key, check_func)
+ 
++    def get_dom_managedsave_supported(self, vm):
++        key = virtinst.support.SUPPORT_DOMAIN_MANAGED_SAVE
++        if key not in self._support_dict:
++            val = virtinst.support.check_domain_support(vm, key)
++            logging.debug("Connection managed save support: %s" % val)
++            self._support_dict[key] = val
++
++        return self._support_dict[key]
++
+     def get_interface_flags(self, iface):
+         key = "interface"
+ 
+diff -r d2c1b327de0c -r affa97c8ae9a src/virtManager/details.py
+--- a/src/virtManager/details.py	Wed May 12 11:42:59 2010 -0400
++++ b/src/virtManager/details.py	Wed May 12 12:57:32 2010 -0400
+@@ -815,6 +815,16 @@
+         if newpage == PAGE_CONSOLE or newpage >= PAGE_DYNAMIC_OFFSET:
+             self.last_console_page = newpage
+ 
++    def change_run_text(self, can_restore):
++        if can_restore:
++            text = _("_Restore")
++        else:
++            text = _("_Run")
++        strip_text = text.replace("_", "")
++
++        self.window.get_widget("details-menu-run").get_child().set_label(text)
++        self.window.get_widget("control-run").set_label(strip_text)
++
+     def update_widget_states(self, vm, status, ignore=None):
+         self.toggle_toolbar(self.window.get_widget("details-menu-view-toolbar"))
+ 
+@@ -824,6 +834,9 @@
+         paused  = vm.is_paused()
+         ro      = vm.is_read_only()
+ 
++        if vm.managedsave_supported:
++            self.change_run_text(vm.hasSavedImage())
++
+         self.window.get_widget("details-menu-destroy").set_sensitive(destroy)
+         self.window.get_widget("control-run").set_sensitive(run)
+         self.window.get_widget("details-menu-run").set_sensitive(run)
+diff -r d2c1b327de0c -r affa97c8ae9a src/virtManager/domain.py
+--- a/src/virtManager/domain.py	Wed May 12 11:42:59 2010 -0400
++++ b/src/virtManager/domain.py	Wed May 12 12:57:32 2010 -0400
+@@ -77,6 +77,8 @@
+ 
+         self._startup_vcpus = None
+ 
++        self.managedsave_supported = False
++
+         self._network_traffic = None
+         self._disk_io = None
+ 
+@@ -228,6 +230,9 @@
+             return "-"
+         return str(i)
+ 
++    def hasSavedImage(self):
++        return False
++
+     def get_abi_type(self):
+         return str(vutil.get_xml_path(self.get_xml(),
+                                       "/domain/os/type")).lower()
+@@ -1181,6 +1186,7 @@
+ 
+         self.getvcpus_supported = support.check_domain_support(self._backend,
+                                             support.SUPPORT_DOMAIN_GETVCPUS)
++        self.managedsave_supported = self.connection.get_dom_managedsave_supported(self._backend)
+ 
+         self.toggle_sample_network_traffic()
+         self.toggle_sample_disk_io()
+@@ -1303,14 +1309,16 @@
+         self._backend.resume()
+         self._update_status()
+ 
+-    def save(self, filename, background=True):
+-        if background:
+-            conn = util.dup_conn(self.config, self.connection)
+-            vm = conn.lookupByID(self.get_id())
++    def hasSavedImage(self):
++        if not self.managedsave_supported:
++            return False
++        return self._backend.hasManagedSaveImage(0)
++
++    def save(self, filename=None):
++        if not self.managedsave_supported:
++            self._backend.save(filename)
+         else:
+-            vm = self._backend
+-
+-        vm.save(filename)
++            self._backend.managedSave(0)
+         self._update_status()
+ 
+     def destroy(self):
+diff -r d2c1b327de0c -r affa97c8ae9a src/virtManager/engine.py
+--- a/src/virtManager/engine.py	Wed May 12 11:42:59 2010 -0400
++++ b/src/virtManager/engine.py	Wed May 12 12:57:32 2010 -0400
+@@ -713,12 +713,13 @@
+     def save_domain(self, src, uri, uuid):
+         conn = self._lookup_connection(uri)
+         vm = conn.get_vm(uuid)
++        managed = bool(vm.managedsave_supported)
+         do_prompt = self.config.get_confirm_poweroff()
+ 
+-        if conn.is_remote():
+-            # FIXME: This should work with remote storage stuff
++        if managed and conn.is_remote():
+             self.err.val_err(_("Saving virtual machines over remote "
+-                               "connections is not yet supported."))
++                               "connections is not supported with this "
++                               "libvirt version or hypervisor."))
+             return
+ 
+         if do_prompt:
+@@ -733,16 +734,18 @@
+                 return
+             self.config.set_confirm_poweroff(not skip_prompt)
+ 
+-        path = util.browse_local(src.window.get_widget("vmm-details"),
+-                                 _("Save Virtual Machine"),
+-                                 self.config, conn,
+-                                 dialog_type=gtk.FILE_CHOOSER_ACTION_SAVE,
+-                                 browse_reason=self.config.CONFIG_DIR_SAVE)
++        path = None
++        if not managed:
++            path = util.browse_local(src.window.get_widget("vmm-details"),
++                                     _("Save Virtual Machine"),
++                                     self.config, conn,
++                                     dialog_type=gtk.FILE_CHOOSER_ACTION_SAVE,
++                                     browse_reason=self.config.CONFIG_DIR_SAVE)
++            if not path:
++                return
+ 
+-        if not path:
+-            return
+-
+-        progWin = vmmAsyncJob(self.config, self._save_callback, [vm, path],
++        progWin = vmmAsyncJob(self.config, self._save_callback,
++                              [vm, path],
+                               _("Saving Virtual Machine"))
+         progWin.run()
+         error, details = progWin.get_error()
+@@ -752,7 +755,11 @@
+ 
+     def _save_callback(self, vm, file_to_save, asyncjob):
+         try:
+-            vm.save(file_to_save)
++            conn = util.dup_conn(self.config, vm.connection,
++                                 return_conn_class=True)
++            newvm = conn.get_vm(vm.get_uuid())
++
++            newvm.save(file_to_save)
+         except Exception, e:
+             asyncjob.set_error(str(e), "".join(traceback.format_exc()))
+ 
+diff -r d2c1b327de0c -r affa97c8ae9a src/virtManager/manager.py
+--- a/src/virtManager/manager.py	Wed May 12 11:42:59 2010 -0400
++++ b/src/virtManager/manager.py	Wed May 12 12:57:32 2010 -0400
+@@ -969,6 +969,15 @@
+                     child = model.iter_children(parent)
+         model.row_changed(row.path, row.iter)
+ 
++    def change_run_text(self, can_restore):
++        if can_restore:
++            text = _("_Restore")
++        else:
++            text = _("_Run")
++        strip_text = text.replace("_", "")
++
++        self.vmmenu_items["run"].get_child().set_label(text)
++        self.window.get_widget("vm-run").set_label(strip_text)
+ 
+     def vm_selected(self, ignore=None):
+         conn = self.current_connection()
+@@ -987,6 +996,9 @@
+             show_pause = bool(vm and vm.is_pauseable())
+         show_shutdown = bool(vm and vm.is_stoppable())
+ 
++        if vm and vm.managedsave_supported:
++            self.change_run_text(vm.hasSavedImage())
++
+         self.window.get_widget("vm-open").set_sensitive(show_open)
+         self.window.get_widget("vm-run").set_sensitive(show_run)
+         self.window.get_widget("vm-shutdown").set_sensitive(show_shutdown)
+diff -rup new/src/virtManager/connection.py virt-manager-0.8.4/src/virtManager/connection.py
+--- new/src/virtManager/connection.py	2010-05-13 15:35:43.055964000 -0400
++++ virt-manager-0.8.4/src/virtManager/connection.py	2010-05-13 15:42:54.872577000 -0400
+@@ -531,10 +531,21 @@ class vmmConnection(gobject.GObject):
+ 
+         return self._get_flags_helper(vm, key, check_func)
+ 
++    def _check_managed_save_supported(self, vm):
++        if not "hasManagedSaveImage" in dir(vm):
++            return False
++
++        try:
++            vm.hasManagedSaveImage(0)
++        except Exception, e:
++            return not virtinst.support.is_error_nosupport(e)
++
++        return True
++
+     def get_dom_managedsave_supported(self, vm):
+-        key = virtinst.support.SUPPORT_DOMAIN_MANAGED_SAVE
++        key = "managed_save"
+         if key not in self._support_dict:
+-            val = virtinst.support.check_domain_support(vm, key)
++            val = self._check_managed_save_supported(vm)
+             logging.debug("Connection managed save support: %s" % val)
+             self._support_dict[key] = val
+ 

@@ -1,0 +1,87 @@
+# HG changeset patch
+# User Cole Robinson <crobinso@redhat.com>
+# Date 1273761451 14400
+# Node ID 104f0ec02b43b17b88de86dbf5ef8a9e7bfee2bc
+# Parent  219640fabf7c723529441d257308cb57078e26d9
+clone: Disable domain startup and unpause while cloning
+
+diff -r 219640fabf7c -r 104f0ec02b43 src/virtManager/clone.py
+--- a/src/virtManager/clone.py	Wed May 12 16:57:29 2010 -0400
++++ b/src/virtManager/clone.py	Thu May 13 10:37:31 2010 -0400
+@@ -742,17 +742,23 @@
+         details = None
+ 
+         try:
+-            # Open a seperate connection to install on since this is async
+-            logging.debug("Threading off connection to clone VM.")
+-            newconn = util.dup_conn(self.config, self.conn)
+-            meter = vmmCreateMeter(asyncjob)
++            try:
++                self.orig_vm.set_cloning(True)
+ 
+-            self.clone_design.orig_connection = newconn
+-            for d in self.clone_design.clone_virtual_disks:
+-                d.conn = newconn
++                # Open a seperate connection to install on since this is async
++                logging.debug("Threading off connection to clone VM.")
++                newconn = util.dup_conn(self.config, self.conn)
++                meter = vmmCreateMeter(asyncjob)
+ 
+-            self.clone_design.setup()
+-            CloneManager.start_duplicate(self.clone_design, meter)
++                self.clone_design.orig_connection = newconn
++                for d in self.clone_design.clone_virtual_disks:
++                    d.conn = newconn
++
++                self.clone_design.setup()
++                CloneManager.start_duplicate(self.clone_design, meter)
++            finally:
++                self.orig_vm.set_cloning(False)
++
+         except Exception, e:
+             error = (_("Error creating virtual machine clone '%s': %s") %
+                       (self.clone_design.clone_name, str(e)))
+diff -r 219640fabf7c -r 104f0ec02b43 src/virtManager/domain.py
+--- a/src/virtManager/domain.py	Wed May 12 16:57:29 2010 -0400
++++ b/src/virtManager/domain.py	Thu May 13 10:37:31 2010 -0400
+@@ -74,6 +74,7 @@
+ 
+         self._backend = backend
+         self.uuid = uuid
++        self.cloning = False
+ 
+         self._startup_vcpus = None
+ 
+@@ -122,6 +123,11 @@
+     def get_autostart(self):
+         raise NotImplementedError()
+ 
++    def get_cloning(self):
++        return self.cloning
++    def set_cloning(self, val):
++        self.cloning = bool(val)
++
+     # Device/XML altering API
+     def set_autostart(self, val):
+         raise NotImplementedError()
+@@ -1295,6 +1301,9 @@
+         self._update_status()
+ 
+     def startup(self):
++        if self.get_cloning():
++            raise RuntimeError(_("Cannot start guest while cloning "
++                                 "operation in progress"))
+         self._backend.create()
+         self._update_status()
+ 
+@@ -1306,6 +1315,10 @@
+         self._backend.undefine()
+ 
+     def resume(self):
++        if self.get_cloning():
++            raise RuntimeError(_("Cannot resume guest while cloning "
++                                 "operation in progress"))
++
+         self._backend.resume()
+         self._update_status()
+ 

@@ -1,0 +1,297 @@
+diff -rup virt-manager-0.8.4/src/virtManager/details.py new/src/virtManager/details.py
+--- virt-manager-0.8.4/src/virtManager/details.py	2010-06-21 13:48:54.994801000 -0400
++++ new/src/virtManager/details.py	2010-06-21 13:48:37.159159000 -0400
+@@ -248,6 +248,8 @@ class vmmDetails(gobject.GObject):
+             "on_security_model_changed": self.security_model_changed,
+ 
+             "on_config_vcpus_changed": self.config_vcpus_changed,
++            "on_config_vcpupin_changed": self.config_vcpus_changed,
++            "on_config_vcpupin_generate_clicked": self.config_vcpupin_generate,
+ 
+             "on_config_memory_changed": self.config_memory_changed,
+             "on_config_maxmem_changed": self.config_maxmem_changed,
+@@ -459,6 +461,8 @@ class vmmDetails(gobject.GObject):
+                                                      0x29, 0x5C, 0x45]))
+         graph_table.attach(self.network_traffic_graph, 1, 2, 3, 4)
+ 
++        graph_table.show_all()
++
+     def init_details(self):
+         # Hardware list
+         # [ label, icon name, icon size, hw type, hw data ]
+@@ -502,6 +506,15 @@ class vmmDetails(gobject.GObject):
+             _("The dynamic SELinux security type tells libvirt to automatically pick a unique label for the guest process and guest image, ensuring total isolation of the guest. (Default)"))
+ 
+         # VCPU Pinning list
++        generate_cpuset = self.window.get_widget("config-vcpupin-generate")
++        generate_warn = self.window.get_widget("config-vcpupin-generate-err")
++        if not self.conn.get_capabilities().host.topology:
++            generate_cpuset.set_sensitive(False)
++            generate_warn.show()
++            util.tooltip_wrapper(generate_warn,
++                                 _("Libvirt did not detect NUMA capabilities."))
++
++
+         # [ VCPU #, Currently running on Phys CPU #, CPU Pinning list ]
+         vcpu_list = self.window.get_widget("config-vcpu-list")
+         vcpu_model = gtk.ListStore(str, str, str)
+@@ -733,7 +746,7 @@ class vmmDetails(gobject.GObject):
+ 
+         self.window.get_widget("config-remove").set_sensitive(True)
+         self.window.get_widget("hw-panel").set_sensitive(True)
+-        self.window.get_widget("hw-panel").show_all()
++        self.window.get_widget("hw-panel").show()
+ 
+         try:
+             if pagetype == HW_LIST_TYPE_GENERAL:
+@@ -1119,7 +1132,66 @@ class vmmDetails(gobject.GObject):
+             maxadj.value = mem
+         maxadj.lower = mem
+ 
++    def generate_cpuset(self):
++        mem = int(self.vm.get_memory()) / 1024 / 1024
++        conn = self.conn.vmm
++        caps = self.conn.get_capabilities()
++
++        if caps.host.topology is None:
++            raise RuntimeError(_("No topology section in capabilities xml."))
++
++        cells = caps.host.topology.cells
++        if len(cells) <= 1:
++            raise RuntimeError(_("Capabilities only show <= 1 cell. "
++                                 "Not NUMA capable"))
++
++        # Capabilities tells us about the available memory 'cells' on the
++        # system. Each 'cell' has associated 'cpu's.
++        #
++        # Use getCellsFreeMemory to determine which 'cell' has the smallest
++        # amount of memory which fits the requested VM memory amount, then
++        # pin the VM to that 'cell's associated 'cpu's
++
++        cell_mem = conn.getCellsFreeMemory(0, len(cells))
++        cell_id = -1
++        mem = mem * 1024
++        for i in range(len(cells)):
++            if cell_mem[i] < mem:
++                # Cell doesn't have enough mem to fit, skip it
++                continue
++
++            if len(cells[i].cpus) == 0:
++                # No cpus to use for the cell
++                continue
++
++            # Find smallest cell that fits
++            if cell_id < 0 or cell_mem[i] < cell_mem[cell_id]:
++                cell_id = i
++
++        if cell_id < 0:
++            raise RuntimeError(_("Could not find any usable NUMA "
++                                 "cell/cpu combinations."))
++
++        # Build cpuset string
++        cpustr = ""
++        for cpu in cells[cell_id].cpus:
++            if cpustr != "":
++                cpustr += ","
++            cpustr += str(cpu.id)
++
++        return cpustr
++
+     # VCPUS
++    def config_vcpupin_generate(self, ignore):
++        try:
++            pinstr = self.generate_cpuset()
++        except Exception, e:
++            return self.err.val_err(
++                _("Error generating CPU configuration: %s") % str(e))
++
++        self.window.get_widget("config-vcpupin").set_text("")
++        self.window.get_widget("config-vcpupin").set_text(pinstr)
++
+     def config_vcpus_changed(self, ignore):
+         conn = self.vm.get_connection()
+         host_active_count = conn.host_active_processor_count()
+diff -rup virt-manager-0.8.4/src/vmm-details.glade new/src/vmm-details.glade
+--- virt-manager-0.8.4/src/vmm-details.glade	2010-06-21 13:48:55.035811000 -0400
++++ new/src/vmm-details.glade	2010-06-21 13:48:37.177177000 -0400
+@@ -2060,11 +2060,14 @@ Overcommit is not supported on Red Hat E
+                                       <widget class="GtkVBox" id="vbox10">
+                                         <property name="visible">True</property>
+                                         <property name="orientation">vertical</property>
+-                                        <property name="spacing">6</property>
++                                        <property name="spacing">12</property>
+                                         <child>
+-                                          <widget class="GtkHBox" id="hbox9">
++                                          <widget class="GtkTable" id="table9">
+                                             <property name="visible">True</property>
+-                                            <property name="spacing">6</property>
++                                            <property name="n_rows">2</property>
++                                            <property name="n_columns">2</property>
++                                            <property name="column_spacing">6</property>
++                                            <property name="row_spacing">6</property>
+                                             <child>
+                                               <widget class="GtkLabel" id="label336">
+                                                 <property name="visible">True</property>
+@@ -2074,34 +2077,99 @@ Overcommit is not supported on Red Hat E
+                                                 <property name="mnemonic_widget">config-vcpupin</property>
+                                               </widget>
+                                               <packing>
+-                                                <property name="expand">False</property>
+-                                                <property name="position">0</property>
++                                                <property name="x_options">GTK_FILL</property>
+                                               </packing>
+                                             </child>
+                                             <child>
+-                                              <widget class="GtkEntry" id="config-vcpupin">
++                                              <widget class="GtkAlignment" id="alignment24">
+                                                 <property name="visible">True</property>
+-                                                <property name="can_focus">True</property>
+-                                                <property name="invisible_char">&#x25CF;</property>
+-                                                <accessibility>
+-                                                  <atkproperty name="AtkObject::accessible-name" translatable="yes">Virtual CPU Affinity Select</atkproperty>
+-                                                </accessibility>
+-                                                <signal name="changed" handler="on_config_vcpus_changed"/>
++                                                <child>
++                                                  <placeholder/>
++                                                </child>
+                                               </widget>
+                                               <packing>
+-                                                <property name="expand">False</property>
+-                                                <property name="position">1</property>
++                                                <property name="top_attach">1</property>
++                                                <property name="bottom_attach">2</property>
++                                                <property name="x_options">GTK_FILL</property>
+                                               </packing>
+                                             </child>
+                                             <child>
+-                                              <widget class="GtkLabel" id="label23">
++                                              <widget class="GtkHBox" id="hbox16">
+                                                 <property name="visible">True</property>
+-                                                <property name="label">&lt;span size='small'&gt;(ex: 0,1,3-5,7)&lt;/span&gt;</property>
+-                                                <property name="use_markup">True</property>
++                                                <property name="spacing">6</property>
++                                                <child>
++                                                  <widget class="GtkEntry" id="config-vcpupin">
++                                                    <property name="visible">True</property>
++                                                    <property name="can_focus">True</property>
++                                                    <property name="invisible_char">&#x25CF;</property>
++                                                    <accessibility>
++                                                      <atkproperty name="AtkObject::accessible-name" translatable="yes">Virtual CPU Affinity Select</atkproperty>
++                                                    </accessibility>
++                                                    <signal name="changed" handler="on_config_vcpupin_changed"/>
++                                                  </widget>
++                                                  <packing>
++                                                    <property name="expand">False</property>
++                                                    <property name="position">0</property>
++                                                  </packing>
++                                                </child>
++                                                <child>
++                                                  <widget class="GtkLabel" id="label23">
++                                                    <property name="visible">True</property>
++                                                    <property name="label">&lt;span size='small'&gt;(ex: 0,1,3-5,7)&lt;/span&gt;</property>
++                                                    <property name="use_markup">True</property>
++                                                  </widget>
++                                                  <packing>
++                                                    <property name="expand">False</property>
++                                                    <property name="position">1</property>
++                                                  </packing>
++                                                </child>
+                                               </widget>
+                                               <packing>
+-                                                <property name="expand">False</property>
+-                                                <property name="position">2</property>
++                                                <property name="left_attach">1</property>
++                                                <property name="right_attach">2</property>
++                                                <property name="x_options">GTK_FILL</property>
++                                                <property name="y_options">GTK_FILL</property>
++                                              </packing>
++                                            </child>
++                                            <child>
++                                              <widget class="GtkHBox" id="hbox9">
++                                                <property name="visible">True</property>
++                                                <property name="spacing">3</property>
++                                                <child>
++                                                  <widget class="GtkButton" id="config-vcpupin-generate">
++                                                    <property name="label" translatable="yes">Generate from host _NUMA configuration</property>
++                                                    <property name="visible">True</property>
++                                                    <property name="can_focus">True</property>
++                                                    <property name="receives_default">True</property>
++                                                    <property name="use_underline">True</property>
++                                                    <signal name="clicked" handler="on_config_vcpupin_generate_clicked"/>
++                                                  </widget>
++                                                  <packing>
++                                                    <property name="expand">False</property>
++                                                    <property name="position">0</property>
++                                                  </packing>
++                                                </child>
++                                                <child>
++                                                  <widget class="GtkAlignment" id="alignment25">
++                                                    <property name="visible">True</property>
++                                                    <child>
++                                                      <widget class="GtkImage" id="config-vcpupin-generate-err">
++                                                        <property name="stock">gtk-dialog-warning</property>
++                                                      </widget>
++                                                    </child>
++                                                  </widget>
++                                                  <packing>
++                                                    <property name="position">1</property>
++                                                  </packing>
++                                                </child>
++                                              </widget>
++                                              <packing>
++                                                <property name="left_attach">1</property>
++                                                <property name="right_attach">2</property>
++                                                <property name="top_attach">1</property>
++                                                <property name="bottom_attach">2</property>
++                                                <property name="x_options">GTK_FILL</property>
++                                                <property name="y_options">GTK_FILL</property>
+                                               </packing>
+                                             </child>
+                                           </widget>
+@@ -2111,17 +2179,40 @@ Overcommit is not supported on Red Hat E
+                                           </packing>
+                                         </child>
+                                         <child>
+-                                          <widget class="GtkScrolledWindow" id="scrolledwindow1">
++                                          <widget class="GtkVBox" id="vbox11">
+                                             <property name="visible">True</property>
+-                                            <property name="can_focus">True</property>
+-                                            <property name="hscrollbar_policy">automatic</property>
+-                                            <property name="vscrollbar_policy">automatic</property>
+-                                            <property name="shadow_type">in</property>
++                                            <property name="orientation">vertical</property>
++                                            <property name="spacing">6</property>
++                                            <child>
++                                              <widget class="GtkLabel" id="label29">
++                                                <property name="visible">True</property>
++                                                <property name="xalign">0</property>
++                                                <property name="label" translatable="yes">R_untime pinning:</property>
++                                                <property name="use_underline">True</property>
++                                                <property name="mnemonic_widget">config-vcpu-list</property>
++                                              </widget>
++                                              <packing>
++                                                <property name="expand">False</property>
++                                                <property name="position">0</property>
++                                              </packing>
++                                            </child>
+                                             <child>
+-                                              <widget class="GtkTreeView" id="config-vcpu-list">
++                                              <widget class="GtkScrolledWindow" id="scrolledwindow1">
+                                                 <property name="visible">True</property>
+                                                 <property name="can_focus">True</property>
++                                                <property name="hscrollbar_policy">automatic</property>
++                                                <property name="vscrollbar_policy">automatic</property>
++                                                <property name="shadow_type">in</property>
++                                                <child>
++                                                  <widget class="GtkTreeView" id="config-vcpu-list">
++                                                    <property name="visible">True</property>
++                                                    <property name="can_focus">True</property>
++                                                  </widget>
++                                                </child>
+                                               </widget>
++                                              <packing>
++                                                <property name="position">1</property>
++                                              </packing>
+                                             </child>
+                                           </widget>
+                                           <packing>

@@ -1,0 +1,379 @@
+# HG changeset patch
+# User Cole Robinson <crobinso@redhat.com>
+# Date 1274358872 14400
+# Node ID 0241648684d1e7dc991e89d32b5ff180aa56b628
+# Parent  622696bd02410f036e165553a9b21b1f647c3f83
+Enable viewing and changing disk cache mode
+
+diff -r 622696bd0241 -r 0241648684d1 src/virtManager/addhardware.py
+--- a/src/virtManager/addhardware.py	Thu May 13 12:41:27 2010 -0400
++++ b/src/virtManager/addhardware.py	Thu May 20 08:34:32 2010 -0400
+@@ -227,6 +227,10 @@
+         target_list.pack_start(text, True)
+         target_list.add_attribute(text, 'text', 3)
+ 
++        # Disk cache mode
++        cache_list = self.window.get_widget("config-storage-cache")
++        uihelpers.build_cache_combo(self.vm, cache_list)
++
+         # Sparse tooltip
+         sparse_info = self.window.get_widget("config-storage-nosparse-info")
+         uihelpers.set_sparse_tooltip(sparse_info)
+@@ -546,6 +550,13 @@
+         device = model[idx][1]
+         return bus, device
+ 
++    def get_config_disk_cache(self, label=False):
++        cache = self.window.get_widget("config-storage-cache")
++        idx = 0
++        if label:
++            idx = 1
++        return cache.get_model()[cache.get_active()][idx]
++
+     # Input getters
+     def get_config_input(self):
+         target = self.window.get_widget("input-type")
+@@ -742,6 +753,7 @@
+                 (_("Disk size:"),   size_str),
+                 (_("Device type:"), self._dev.device),
+                 (_("Bus type:"),    self._dev.bus),
++                (_("Cache mode:"),  self.get_config_disk_cache(label=True)),
+             ]
+             title = _("Storage")
+ 
+@@ -1089,6 +1101,7 @@
+ 
+     def validate_page_storage(self):
+         bus, device = self.get_config_disk_target()
++        cache = self.get_config_disk_cache()
+ 
+         # Make sure default pool is running
+         if self.is_default_storage():
+@@ -1139,7 +1152,8 @@
+                                         sparse = sparse,
+                                         readOnly = readonly,
+                                         device = device,
+-                                        bus = bus)
++                                        bus = bus,
++                                        driverCache = cache)
+ 
+             if (disk.type == virtinst.VirtualDisk.TYPE_FILE and
+                 not self.vm.is_hvm() and
+diff -r 622696bd0241 -r 0241648684d1 src/virtManager/details.py
+--- a/src/virtManager/details.py	Thu May 13 12:41:27 2010 -0400
++++ b/src/virtManager/details.py	Thu May 20 08:34:32 2010 -0400
+@@ -259,6 +259,7 @@
+ 
+             "on_disk_readonly_changed": self.config_enable_apply,
+             "on_disk_shareable_changed": self.config_enable_apply,
++            "on_disk_cache_combo_changed": self.config_enable_apply,
+ 
+             "on_network_model_combo_changed": self.config_enable_apply,
+ 
+@@ -557,6 +558,10 @@
+         txtCol.add_attribute(text, 'sensitive', BOOT_ACTIVE)
+ 
+         no_default= not self.is_customize_dialog
++        # Disk cache combo
++        disk_cache = self.window.get_widget("disk-cache-combo")
++        uihelpers.build_cache_combo(self.vm, disk_cache)
++
+         # Network model
+         net_model = self.window.get_widget("network-model-combo")
+         uihelpers.build_netmodel_combo(self.vm, net_model)
+@@ -1248,10 +1253,13 @@
+     # Helper for accessing value of combo/label pattern
+     def get_combo_label_value(self, prefix, model_idx=0):
+         combo = self.window.get_widget(prefix + "-combo")
++        label = self.window.get_widget(prefix + "-label")
+         value = None
+ 
+         if combo.get_property("visible"):
+             value = combo.get_model()[combo.get_active()][model_idx]
++        else:
++            value = label.get_text()
+ 
+         return value
+ 
+@@ -1380,11 +1388,14 @@
+     def config_disk_apply(self, dev_id_info):
+         do_readonly = self.window.get_widget("disk-readonly").get_active()
+         do_shareable = self.window.get_widget("disk-shareable").get_active()
++        cache = self.get_combo_label_value("disk-cache")
+ 
+         return self._change_config_helper([self.vm.define_disk_readonly,
+-                                           self.vm.define_disk_shareable],
++                                           self.vm.define_disk_shareable,
++                                           self.vm.define_disk_cache],
+                                           [(dev_id_info, do_readonly),
+-                                           (dev_id_info, do_shareable)])
++                                           (dev_id_info, do_shareable),
++                                           (dev_id_info, cache)])
+ 
+     # Audio options
+     def config_sound_apply(self, dev_id_info):
+@@ -1753,6 +1764,7 @@
+         share = diskinfo[7]
+         bus = diskinfo[8]
+         idx = diskinfo[9]
++        cache = diskinfo[10]
+ 
+         size = _("Unknown")
+         if not path:
+@@ -1778,6 +1790,7 @@
+         self.window.get_widget("disk-readonly").set_sensitive(not is_cdrom)
+         self.window.get_widget("disk-shareable").set_active(share)
+         self.window.get_widget("disk-size").set_text(size)
++        self.set_combo_label("disk-cache", 0, cache)
+ 
+         button = self.window.get_widget("config-cdrom-connect")
+         if is_cdrom or is_floppy:
+diff -r 622696bd0241 -r 0241648684d1 src/virtManager/domain.py
+--- a/src/virtManager/domain.py	Thu May 13 12:41:27 2010 -0400
++++ b/src/virtManager/domain.py	Thu May 20 08:34:32 2010 -0400
+@@ -418,6 +418,7 @@
+                 readonly = False
+                 sharable = False
+                 devtype = node.prop("device")
++                cache = None
+                 if devtype == None:
+                     devtype = "disk"
+                 for child in node.children:
+@@ -431,6 +432,8 @@
+                         readonly = True
+                     elif child.name == "shareable":
+                         sharable = True
++                    elif child.name == "driver":
++                        cache = child.prop("cache")
+ 
+                 if srcpath == None:
+                     if devtype == "cdrom" or devtype == "floppy":
+@@ -440,7 +443,7 @@
+                 #   disk device type, disk type, readonly?, sharable?,
+                 #   bus type, disk idx ]
+                 disks.append(["disk", devdst, devdst, srcpath, devtype, typ,
+-                              readonly, sharable, bus, 0])
++                              readonly, sharable, bus, 0, cache])
+ 
+             # Iterate through all disks and calculate what number they are
+             idx_mapping = {}
+@@ -1825,6 +1828,29 @@
+         return self._redefine(util.xml_parse_wrapper, self._change_disk_param,
+                              dev_id_info, "shareable", do_shareable)
+ 
++    def define_disk_cache(self, dev_id_info, new_cache):
++        devtype = "disk"
++        if not self._check_device_is_present(devtype, dev_id_info):
++            return
++
++        def change_cache(doc, ctx):
++            dev_node = self._get_device_xml_nodes(ctx, devtype, dev_id_info)[0]
++            tmpnode = dev_node.xpathEval("./driver")
++            node = tmpnode and tmpnode[0] or None
++
++            if not node:
++                if new_cache:
++                    node = dev_node.newChild(None, "driver", None)
++
++            if new_cache:
++                node.setProp("cache", new_cache)
++            else:
++                node.unsetProp("cache")
++
++            return doc.serialize()
++
++        return self._redefine(util.xml_parse_wrapper, change_cache)
++
+     # Network properties
+     def define_network_model(self, dev_id_info, newmodel):
+         devtype = "interface"
+diff -r 622696bd0241 -r 0241648684d1 src/virtManager/uihelpers.py
+--- a/src/virtManager/uihelpers.py	Thu May 13 12:41:27 2010 -0400
++++ b/src/virtManager/uihelpers.py	Thu May 20 08:34:32 2010 -0400
+@@ -223,6 +223,21 @@
+         for m in mod_list:
+             model.append([m, m])
+ 
++def build_cache_combo(vm, combo, no_default=False):
++    dev_model = gtk.ListStore(str, str)
++    combo.set_model(dev_model)
++    text = gtk.CellRendererText()
++    combo.pack_start(text, True)
++    combo.add_attribute(text, 'text', 1)
++    dev_model.set_sort_column_id(0, gtk.SORT_ASCENDING)
++
++    combo.set_active(-1)
++    for m in virtinst.VirtualDisk.cache_types:
++        dev_model.append([m, m])
++
++    if not no_default:
++        dev_model.append([None, "default"])
++    combo.set_active(0)
+ 
+ #######################################################################
+ # Widgets for listing network device options (in create, addhardware) #
+diff -r 622696bd0241 -r 0241648684d1 src/vmm-add-hardware.glade
+--- a/src/vmm-add-hardware.glade	Thu May 13 12:41:27 2010 -0400
++++ b/src/vmm-add-hardware.glade	Thu May 20 08:34:32 2010 -0400
+@@ -436,21 +436,12 @@
+                               </packing>
+                             </child>
+                             <child>
+-                              <widget class="GtkHBox" id="hbox64">
++                              <widget class="GtkTable" id="table7">
+                                 <property name="visible">True</property>
+-                                <property name="spacing">12</property>
+-                                <child>
+-                                  <widget class="GtkLabel" id="label388">
+-                                    <property name="visible">True</property>
+-                                    <property name="label" translatable="yes">_Device type:</property>
+-                                    <property name="use_underline">True</property>
+-                                  </widget>
+-                                  <packing>
+-                                    <property name="expand">False</property>
+-                                    <property name="fill">False</property>
+-                                    <property name="position">0</property>
+-                                  </packing>
+-                                </child>
++                                <property name="n_rows">2</property>
++                                <property name="n_columns">2</property>
++                                <property name="column_spacing">6</property>
++                                <property name="row_spacing">6</property>
+                                 <child>
+                                   <widget class="GtkComboBox" id="config-storage-devtype">
+                                     <property name="visible">True</property>
+@@ -460,8 +451,47 @@
+                                     <signal name="changed" handler="on_target_device_changed"/>
+                                   </widget>
+                                   <packing>
+-                                    <property name="expand">False</property>
+-                                    <property name="position">1</property>
++                                    <property name="left_attach">1</property>
++                                    <property name="right_attach">2</property>
++                                    <property name="x_options">GTK_FILL</property>
++                                    <property name="y_options">GTK_FILL</property>
++                                  </packing>
++                                </child>
++                                <child>
++                                  <widget class="GtkLabel" id="label388">
++                                    <property name="visible">True</property>
++                                    <property name="xalign">0</property>
++                                    <property name="label" translatable="yes">_Device type:</property>
++                                    <property name="use_underline">True</property>
++                                  </widget>
++                                  <packing>
++                                    <property name="x_options">GTK_FILL</property>
++                                  </packing>
++                                </child>
++                                <child>
++                                  <widget class="GtkLabel" id="label28">
++                                    <property name="visible">True</property>
++                                    <property name="label" translatable="yes">Cache _mode:</property>
++                                    <property name="use_underline">True</property>
++                                    <property name="mnemonic_widget">config-storage-cache</property>
++                                  </widget>
++                                  <packing>
++                                    <property name="top_attach">1</property>
++                                    <property name="bottom_attach">2</property>
++                                    <property name="x_options">GTK_FILL</property>
++                                  </packing>
++                                </child>
++                                <child>
++                                  <widget class="GtkComboBox" id="config-storage-cache">
++                                    <property name="visible">True</property>
++                                  </widget>
++                                  <packing>
++                                    <property name="left_attach">1</property>
++                                    <property name="right_attach">2</property>
++                                    <property name="top_attach">1</property>
++                                    <property name="bottom_attach">2</property>
++                                    <property name="x_options">GTK_FILL</property>
++                                    <property name="y_options">GTK_FILL</property>
+                                   </packing>
+                                 </child>
+                               </widget>
+diff -r 622696bd0241 -r 0241648684d1 src/vmm-details.glade
+--- a/src/vmm-details.glade	Thu May 13 12:41:27 2010 -0400
++++ b/src/vmm-details.glade	Thu May 20 08:34:32 2010 -0400
+@@ -2613,7 +2613,7 @@
+                                       <widget class="GtkTable" id="table32">
+                                         <property name="visible">True</property>
+                                         <property name="border_width">3</property>
+-                                        <property name="n_rows">5</property>
++                                        <property name="n_rows">6</property>
+                                         <property name="n_columns">3</property>
+                                         <property name="column_spacing">8</property>
+                                         <property name="row_spacing">4</property>
+@@ -2766,8 +2766,8 @@
+                                             <property name="label" translatable="yes">Storage size:</property>
+                                           </widget>
+                                           <packing>
+-                                            <property name="top_attach">4</property>
+-                                            <property name="bottom_attach">5</property>
++                                            <property name="top_attach">5</property>
++                                            <property name="bottom_attach">6</property>
+                                             <property name="x_options">GTK_FILL</property>
+                                           </packing>
+                                         </child>
+@@ -2780,6 +2780,51 @@
+                                           <packing>
+                                             <property name="left_attach">1</property>
+                                             <property name="right_attach">2</property>
++                                            <property name="top_attach">5</property>
++                                            <property name="bottom_attach">6</property>
++                                          </packing>
++                                        </child>
++                                        <child>
++                                          <widget class="GtkLabel" id="label123">
++                                            <property name="visible">True</property>
++                                            <property name="xalign">1</property>
++                                            <property name="label" translatable="yes">Cac_he mode:</property>
++                                            <property name="use_underline">True</property>
++                                          </widget>
++                                          <packing>
++                                            <property name="top_attach">4</property>
++                                            <property name="bottom_attach">5</property>
++                                            <property name="x_options">GTK_FILL</property>
++                                          </packing>
++                                        </child>
++                                        <child>
++                                          <widget class="GtkHBox" id="hbox15">
++                                            <property name="visible">True</property>
++                                            <child>
++                                              <widget class="GtkComboBox" id="disk-cache-combo">
++                                                <property name="visible">True</property>
++                                                <signal name="changed" handler="on_disk_cache_combo_changed"/>
++                                              </widget>
++                                              <packing>
++                                                <property name="expand">False</property>
++                                                <property name="position">0</property>
++                                              </packing>
++                                            </child>
++                                            <child>
++                                              <widget class="GtkLabel" id="disk-cache-label">
++                                                <property name="visible">True</property>
++                                                <property name="xalign">0</property>
++                                                <property name="label">Unknown cache</property>
++                                              </widget>
++                                              <packing>
++                                                <property name="expand">False</property>
++                                                <property name="position">1</property>
++                                              </packing>
++                                            </child>
++                                          </widget>
++                                          <packing>
++                                            <property name="left_attach">1</property>
++                                            <property name="right_attach">2</property>
+                                             <property name="top_attach">4</property>
+                                             <property name="bottom_attach">5</property>
+                                           </packing>
+@@ -2790,6 +2835,9 @@
+                                         <child>
+                                           <placeholder/>
+                                         </child>
++                                        <child>
++                                          <placeholder/>
++                                        </child>
+                                       </widget>
+                                     </child>
+                                   </widget>
